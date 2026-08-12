@@ -1,0 +1,56 @@
+import type { JobListing } from '../domain/JobListing.js';
+
+export const JOB_EXPORT_HEADERS = [
+  'State',
+  'Suburbs',
+  'Job Title',
+  'Role type',
+  'Company',
+  'Salary',
+  'Posted Date',
+  'Contact Email',
+  'Seek URL',
+  'Permanent URL',
+  'AB Fill Status',
+  'State',
+  'Company Name',
+  'Category',
+  'Product',
+  'Trading Status',
+  'Client Title',
+  'First Name',
+  'Email',
+  'History',
+  'History 2.0',
+  'History 3.0',
+  'History 4.0',
+] as const;
+
+/** SRP: JobListing → consultant workbook row. Mapping columns stay blank. */
+export function toJobExportRow(job: JobListing): string[] {
+  return [
+    job.state || '',
+    job.suburbs || '',
+    job.jobTitle || '',
+    job.roleType || '',
+    job.company || '',
+    job.salary || '',
+    job.postedDate || '',
+    job.contactEmail || '',
+    job.seekUrl || '',
+    job.permanentUrl || '',
+    '',
+    '',
+    '',
+    '',
+    '',
+    '',
+    '',
+    '',
+    '',
+    '',
+    '',
+    '',
+    '',
+  ];
+}

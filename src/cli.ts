@@ -9,6 +9,9 @@ import { CsvJobExporter } from './export/CsvJobExporter.js';
 import { ExcelJobWorkbookBuilder } from './export/ExcelJobWorkbookBuilder.js';
 import { PlaywrightListingScraper } from './scraping/PlaywrightListingScraper.js';
 import { SequentialListingOrchestrator } from './scraping/SequentialListingOrchestrator.js';
+import type { ListingRunOutcome } from './scraping/SequentialListingOrchestrator.js';
+import { GcsPermanentUrlAttacher } from './storage/GcsPermanentUrlAttacher.js';
+import type { IPermanentUrlAttacher } from './ports/IPermanentUrlAttacher.js';
 
 const DEFAULT_URLS = [
   'https://au.seek.com/William-Adams-Pty-Ltd-jobs',
@@ -21,21 +24,33 @@ function parseArgs(argv: string[]) {
   let maxPages = 100;
   let outDir = path.resolve('output');
   let sendEmail = true;
+  let attachGcs = true;
 
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (arg === '--headed') headless = false;
     else if (arg === '--no-email') sendEmail = false;
+    else if (arg === '--no-gcs') attachGcs = false;
     else if (arg === '--max-pages') maxPages = Number(argv[++i] || 100);
     else if (arg === '--out') outDir = path.resolve(argv[++i] || 'output');
     else if (arg.startsWith('http')) urls.push(arg);
   }
 
-  return { urls: urls.length ? urls : DEFAULT_URLS, headless, maxPages, outDir, sendEmail };
+  return { urls: urls.length ? urls : DEFAULT_URLS, headless, maxPages, outDir, sendEmail, attachGcs };
+}
+
+async function attachPermanentUrls(
+  outcomes: ListingRunOutcome[],
+  attacher: IPermanentUrlAttacher
+): Promise<void> {
+  for (const outcome of outcomes) {
+    if (outcome.error || outcome.jobs.length === 0) continue;
+    outcome.jobs = await attacher.attach(outcome.jobs);
+  }
 }
 
 async function main() {
-  const { urls, headless, maxPages, outDir, sendEmail } = parseArgs(process.argv.slice(2));
+  const { urls, headless, maxPages, outDir, sendEmail, attachGcs } = parseArgs(process.argv.slice(2));
   console.log(`Sequential scrape of ${urls.length} listing URL(s)…`);
   urls.forEach((u, i) => console.log(`  ${i + 1}. ${u}`));
 
@@ -46,6 +61,13 @@ async function main() {
 
   const outcomes = await orchestrator.run(urls);
   await mkdir(outDir, { recursive: true });
+
+  if (attachGcs) {
+    console.log('Uploading listing snapshots to GCS for Permanent URL…');
+    await attachPermanentUrls(outcomes, new GcsPermanentUrlAttacher());
+  } else {
+    console.log('GCS skipped (--no-gcs). Permanent URL will be blank.');
+  }
 
   const summary = [];
   for (const outcome of outcomes) {

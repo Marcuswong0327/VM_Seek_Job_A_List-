@@ -48,19 +48,21 @@ describe('ExcelJobWorkbookBuilder', () => {
     await wb.xlsx.load(workbookFile.buffer);
     const sheet = wb.getWorksheet('All Jobs');
     expect(sheet).toBeTruthy();
-    expect(sheet!.getRow(1).values).toEqual([
-      undefined,
-      'Listing URL',
+    expect(sheet!.getRow(1).values.slice(1, 11)).toEqual([
       'State',
       'Suburbs',
       'Job Title',
+      'Role type',
       'Company',
       'Salary',
       'Posted Date',
+      'Contact Email',
       'Seek URL',
+      'Permanent URL',
     ]);
     expect(sheet!.rowCount).toBe(3);
-    expect(sheet!.getRow(2).getCell(4).value).toBe('Plant Mechanic');
-    expect(sheet!.getRow(3).getCell(4).value).toBe('Chef');
+    expect(sheet!.getRow(2).getCell(3).value).toBe('Plant Mechanic');
+    expect(String(sheet!.getRow(2).getCell(4).value ?? '')).toBe('');
+    expect(sheet!.getRow(3).getCell(3).value).toBe('Chef');
   });
 });

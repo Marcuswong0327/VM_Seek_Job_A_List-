@@ -20,7 +20,9 @@ describe('CsvJobExporter', () => {
     const csv = await exporter.exportToString(jobs);
 
     expect(csv.startsWith('\uFEFF')).toBe(true);
-    expect(csv).toContain('State,Suburbs,Job Title,Company,Salary,Posted Date,Seek URL');
+    expect(csv).toContain(
+      'State,Suburbs,Job Title,Role type,Company,Salary,Posted Date,Contact Email,Seek URL,Permanent URL,AB Fill Status,State,Company Name,Category,Product,Trading Status,Client Title,First Name,Email,History,History 2.0,History 3.0,History 4.0'
+    );
     expect(csv).toContain('Plant Mechanic');
     expect(csv).toContain('William Adams Pty Ltd');
   });

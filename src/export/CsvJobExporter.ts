@@ -2,37 +2,18 @@ import type { JobListing } from '../domain/JobListing.js';
 import type { IJobExporter } from '../ports/IListingScraper.js';
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { JOB_EXPORT_HEADERS, toJobExportRow } from './JobExportColumns.js';
 
 function escapeCsv(value: string): string {
   return `"${String(value ?? '').replace(/"/g, '""')}"`;
 }
 
-const HEADERS = [
-  'State',
-  'Suburbs',
-  'Job Title',
-  'Company',
-  'Salary',
-  'Posted Date',
-  'Seek URL',
-] as const;
-
 /** SRP: JobListing[] → CSV string / file. */
 export class CsvJobExporter implements IJobExporter {
   exportToString(jobs: JobListing[]): Promise<string> {
     const lines = [
-      HEADERS.join(','),
-      ...jobs.map((job) =>
-        [
-          escapeCsv(job.state),
-          escapeCsv(job.suburbs),
-          escapeCsv(job.jobTitle),
-          escapeCsv(job.company),
-          escapeCsv(job.salary),
-          escapeCsv(job.postedDate),
-          escapeCsv(job.seekUrl),
-        ].join(',')
-      ),
+      JOB_EXPORT_HEADERS.join(','),
+      ...jobs.map((job) => toJobExportRow(job).map(escapeCsv).join(',')),
     ];
     return Promise.resolve(`\uFEFF${lines.join('\n')}`);
   }
