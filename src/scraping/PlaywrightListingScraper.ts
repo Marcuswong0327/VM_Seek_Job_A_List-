@@ -1,37 +1,43 @@
 import type { Browser, BrowserContext, Page } from 'playwright';
 import { chromium } from 'playwright';
-import type { JobListing, ListingScrapeResult } from '../domain/JobListing.js';
+import type { JobListing, ListingScrapeResult, PageScrapeError } from '../domain/JobListing.js';
 import type { IListingScraper } from '../ports/IListingScraper.js';
 import { parseJobCountFromText } from '../parsing/SeekJobCountParser.js';
 import { parseSeekJobCardHtml } from '../parsing/SeekJobCardParser.js';
-import { buildSeekListingPageUrl, shouldContinueToNextPage } from './SeekPagination.js';
+import {
+  buildSeekListingPageUrl,
+  CARD_LOAD_TIMEOUT_MS,
+  decideNextPageAction,
+  MAX_CONSECUTIVE_PAGE_FAILURES,
+} from './SeekPagination.js';
+
+export const JOB_CARD_SELECTOR =
+  'article[data-testid="job-card"], [data-automation="normalJob"], [data-testid="job-result"], div[data-card-type="JobCard"]';
 
 export type PlaywrightListingScraperOptions = {
   headless?: boolean;
   maxPages?: number;
-  pageWaitMs?: number;
-  afterNavWaitMs?: number;
+  /** Max time to wait for job cards on a page (event-driven). Default 30s. */
+  cardLoadTimeoutMs?: number;
   /** Injected browser factory for tests (DIP). */
   launchBrowser?: () => Promise<Browser>;
 };
 
 /**
  * Playwright adapter for IListingScraper.
- * Paginates a Seek listing URL until Next is gone or maxPages is hit.
- * No job-count routing — every URL is scraped the same way.
+ * Waits for job-card DOM (up to 30s) instead of a fixed sleep.
+ * A timed-out page is skipped; the listing continues unless consecutive failures hit the cap.
  */
 export class PlaywrightListingScraper implements IListingScraper {
   private readonly headless: boolean;
   private readonly maxPages: number;
-  private readonly pageWaitMs: number;
-  private readonly afterNavWaitMs: number;
+  private readonly cardLoadTimeoutMs: number;
   private readonly launchBrowser: () => Promise<Browser>;
 
   constructor(options: PlaywrightListingScraperOptions = {}) {
     this.headless = options.headless ?? true;
     this.maxPages = options.maxPages ?? 100;
-    this.pageWaitMs = options.pageWaitMs ?? 1500;
-    this.afterNavWaitMs = options.afterNavWaitMs ?? 2500;
+    this.cardLoadTimeoutMs = options.cardLoadTimeoutMs ?? CARD_LOAD_TIMEOUT_MS;
     this.launchBrowser =
       options.launchBrowser ?? (() => chromium.launch({ headless: this.headless }));
   }
@@ -46,14 +52,8 @@ export class PlaywrightListingScraper implements IListingScraper {
         locale: 'en-AU',
       });
       const page = await context.newPage();
-      const firstUrl = buildSeekListingPageUrl(url, 1);
-      await page.goto(firstUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
-      await sleep(this.pageWaitMs);
-
-      const reportedJobCount = await this.readReportedJobCount(page);
-      const { jobs, totalPages } = await this.collectAllPages(page, url);
-
-      return { url, jobs, totalPages, reportedJobCount };
+      const collected = await this.collectAllPages(page, url);
+      return { url, ...collected };
     } finally {
       await context?.close().catch(() => undefined);
       await browser.close().catch(() => undefined);
@@ -76,71 +76,97 @@ export class PlaywrightListingScraper implements IListingScraper {
       if (count !== null) return count;
     }
 
-    const bodyText = await page.locator('body').innerText();
+    const bodyText = await page.locator('body').innerText().catch(() => '');
     const match = bodyText.match(/\b([\d,]+)\+?\s*jobs?\b/i);
     return match ? parseJobCountFromText(match[0]) : null;
+  }
+
+  private async waitForJobCards(page: Page): Promise<void> {
+    await page.locator(JOB_CARD_SELECTOR).first().waitFor({
+      state: 'visible',
+      timeout: this.cardLoadTimeoutMs,
+    });
   }
 
   private async collectAllPages(
     page: Page,
     listingUrl: string
-  ): Promise<{ jobs: JobListing[]; totalPages: number }> {
+  ): Promise<{
+    jobs: JobListing[];
+    totalPages: number;
+    reportedJobCount: number | null;
+    pageErrors: PageScrapeError[];
+  }> {
     const allJobs: JobListing[] = [];
     const seen = new Set<string>();
+    const pageErrors: PageScrapeError[] = [];
+    let reportedJobCount: number | null = null;
     let pageCount = 0;
+    let consecutiveFailures = 0;
 
     while (pageCount < this.maxPages) {
       pageCount += 1;
-      await sleep(this.pageWaitMs);
-
-      let cardHtmlList = await this.readCardHtml(page);
-
-      if (cardHtmlList.length === 0 && pageCount === 1) {
-        await sleep(2500);
-        cardHtmlList = await this.readCardHtml(page);
-      }
-
-      if (cardHtmlList.length === 0) break;
-
+      const pageUrl = buildSeekListingPageUrl(listingUrl, pageCount);
+      let pageFailed = false;
+      let cardsPresent = false;
       let added = 0;
-      for (const html of cardHtmlList) {
-        const job = parseSeekJobCardHtml(html);
-        if (!job) continue;
-        const key = `${job.jobTitle}||${job.company}||${job.seekUrl}`;
-        if (seen.has(key)) continue;
-        seen.add(key);
-        allJobs.push(job);
-        added += 1;
+
+      try {
+        await page.goto(pageUrl, {
+          waitUntil: 'domcontentloaded',
+          timeout: this.cardLoadTimeoutMs,
+        });
+        await this.waitForJobCards(page);
+      } catch (err) {
+        pageFailed = true;
+        consecutiveFailures += 1;
+        pageErrors.push({
+          page: pageCount,
+          error: `Skipped page ${pageCount}: ${err instanceof Error ? err.message : String(err)}`,
+        });
       }
 
-      // Keep requesting ?page=N until a page yields no new jobs (Next button is unreliable under overlays).
+      if (!pageFailed) {
+        consecutiveFailures = 0;
+        if (reportedJobCount === null) {
+          reportedJobCount = await this.readReportedJobCount(page);
+        }
+
+        const cardHtmlList = await this.readCardHtml(page);
+        cardsPresent = cardHtmlList.length > 0;
+
+        for (const html of cardHtmlList) {
+          const job = parseSeekJobCardHtml(html);
+          if (!job) continue;
+          const key = `${job.jobTitle}||${job.company}||${job.seekUrl}`;
+          if (seen.has(key)) continue;
+          seen.add(key);
+          allJobs.push(job);
+          added += 1;
+        }
+      }
+
       if (
-        !shouldContinueToNextPage({
+        decideNextPageAction({
           pageCount,
           maxPages: this.maxPages,
           addedOnPage: added,
-        })
+          cardsPresent,
+          pageFailed,
+          consecutiveFailures,
+          maxConsecutiveFailures: MAX_CONSECUTIVE_PAGE_FAILURES,
+        }) === 'stop'
       ) {
         break;
       }
-
-      const nextUrl = buildSeekListingPageUrl(listingUrl, pageCount + 1);
-      await page.goto(nextUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
-      await sleep(this.afterNavWaitMs);
     }
 
-    return { jobs: allJobs, totalPages: pageCount };
+    return { jobs: allJobs, totalPages: pageCount, reportedJobCount, pageErrors };
   }
 
   private async readCardHtml(page: Page): Promise<string[]> {
     return page
-      .locator(
-        'article[data-testid="job-card"], [data-automation="normalJob"], [data-testid="job-result"], div[data-card-type="JobCard"]'
-      )
+      .locator(JOB_CARD_SELECTOR)
       .evaluateAll((nodes) => nodes.map((n) => (n as HTMLElement).outerHTML));
   }
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
 }

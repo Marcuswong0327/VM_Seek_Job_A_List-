@@ -18,8 +18,7 @@ describe.runIf(liveEnabled)('live Seek sequential scrape', () => {
     const scraper = new PlaywrightListingScraper({
       headless: true,
       maxPages: 5,
-      pageWaitMs: 2000,
-      afterNavWaitMs: 3000,
+      cardLoadTimeoutMs: 30_000,
     });
     const orchestrator = new SequentialListingOrchestrator(scraper);
     const outcomes = await orchestrator.run(urls);

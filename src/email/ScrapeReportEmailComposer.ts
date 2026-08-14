@@ -34,6 +34,15 @@ export class ScrapeReportEmailComposer {
       .map((o) => `<li>${escapeHtml(o.url)} — ${escapeHtml(o.error || 'error')}</li>`)
       .join('');
 
+    const pageBugRows = input.outcomes
+      .flatMap((o) =>
+        (o.pageErrors || []).map(
+          (pe) =>
+            `<li>${escapeHtml(o.url)} — page ${pe.page}: ${escapeHtml(pe.error)}</li>`
+        )
+      )
+      .join('');
+
     const html = `
       <p>Seek scrape finished on ${dateLabel}.</p>
       <p><strong>${plural(ok.length, 'listing')}</strong> succeeded with <strong>${plural(jobCount, 'job')}</strong>.</p>
@@ -43,13 +52,18 @@ export class ScrapeReportEmailComposer {
           ? `<p><strong>${plural(failed.length, 'listing')} failed:</strong></p><ul>${failRows}</ul>`
           : ''
       }
+      ${
+        pageBugRows
+          ? `<p><strong>Skipped pages (reported):</strong></p><ul>${pageBugRows}</ul>`
+          : ''
+      }
       <p>The Excel workbook is attached.</p>
     `.trim();
 
     return {
       from: input.from,
       to: input.to,
-      subject: `Seek job listings — ${plural(ok.length, 'listing')}, ${plural(jobCount, 'job')} (${dateLabel})`,
+      subject: `New jobs coming! Bi-weekly job alerts`,
       html,
       attachments: [
         {

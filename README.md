@@ -107,8 +107,8 @@ Example:
 
 ```bash
 RESEND_API_KEY=re_xxxxxxxx
-RESEND_FROM=Seek Jobs <jobs@your-verified-domain.com>
-EMAIL_TO=you@yourcompany.com
+RESEND_FROM=Seek Jobs A List <onboarding@resend.dev>
+EMAIL_TO=marcus.wong@linktal.com.au
 GCS_UPLOAD_ENDPOINT=https://upload-seek-job-5658707854.asia-southeast1.run.app
 ```
 
@@ -132,6 +132,28 @@ npm run scrape -- --no-email --max-pages 2
 
 Excel lands in `~/VM_Seek_Job_A_List-/output/`. Check the VM can reach Resend and Cloud Run (egress / HTTPS allowed).
 
-### 5. Later: run when the schedule starts the VM
+### 5. Auto-run `npm run scrape` when the VM starts
 
-Add a startup script (Compute Engine → VM → Edit → **Automation / Startup script**) that `cd`s to the app and runs `npm run scrape`. Until that exists, the scheduled VM will boot idle.
+Instance schedule only **starts/stops** the machine. To scrape without SSH, paste this as the VM **startup script**:
+
+Compute Engine → **VM instances** → `vm-seek-job-a-list` → **Edit** → **Automation** → **Startup script**.
+
+Use the contents of `scripts/vm-startup.sh` (runs `npm run scrape` as `shiquan0327` on boot, logs to `output/startup-scrape-*.log`).
+
+Flow:
+
+1. Instance schedule starts the VM (e.g. 8:00)
+2. Linux boots → startup script runs `npm run scrape`
+3. Excel + Resend email
+4. Instance schedule stops the VM (e.g. 12:30)
+
+Give the scrape enough time before the stop (hakka + William Adams is usually minutes, not hours).
+
+Alternatively, on the VM: `crontab -e` with `0 8 * * 1,3 /usr/bin/npm run scrape` only works if the VM is **already running** at that time.
+
+### Network: not your Wi‑Fi or hotspot
+
+The VM uses **Google Cloud’s network** in `asia-southeast1-b` (Singapore). It does **not** use your home Wi‑Fi or phone hotspot. Your laptop can be offline; the VM still reaches Seek, GCS, and Resend through GCP egress.
+
+Your Wi‑Fi is only used for `gcloud ssh` / `scp` from your PC.
+

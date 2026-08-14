@@ -11,9 +11,15 @@ export type JobListing = {
   permanentUrl?: string;
 };
 
+export type PageScrapeError = {
+  page: number;
+  error: string;
+};
+
 export type ListingScrapeResult = {
   url: string;
   jobs: JobListing[];
   totalPages: number;
   reportedJobCount: number | null;
+  pageErrors?: PageScrapeError[];
 };

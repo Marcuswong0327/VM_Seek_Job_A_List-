@@ -6,7 +6,7 @@ describe('shouldContinueToNextPage', () => {
     expect(shouldContinueToNextPage({ pageCount: 1, maxPages: 5, addedOnPage: 22 })).toBe(true);
   });
 
-  it('stops when the current page added no jobs', () => {
+  it('stops when the current page added no jobs and no cards were present', () => {
     expect(shouldContinueToNextPage({ pageCount: 2, maxPages: 5, addedOnPage: 0 })).toBe(false);
   });
 

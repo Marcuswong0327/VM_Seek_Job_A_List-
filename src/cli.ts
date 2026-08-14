@@ -78,6 +78,13 @@ async function main() {
     }
 
     const file = await exporter.export(outcome.jobs, { sourceUrl: outcome.url, outDir });
+    const pageErrs = outcome.pageErrors || [];
+    if (pageErrs.length) {
+      console.error(`PAGE ISSUES ${outcome.url}:`);
+      for (const pe of pageErrs) {
+        console.error(`  page ${pe.page}: ${pe.error}`);
+      }
+    }
     console.log(
       `OK   ${outcome.url} → ${outcome.jobs.length} jobs` +
         (outcome.reportedJobCount != null ? ` (Seek reports ${outcome.reportedJobCount})` : '') +
@@ -90,6 +97,7 @@ async function main() {
       reportedJobCount: outcome.reportedJobCount,
       totalPages: outcome.totalPages,
       file,
+      pageErrors: pageErrs,
     });
   }
 
