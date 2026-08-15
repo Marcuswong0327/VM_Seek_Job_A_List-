@@ -3,21 +3,36 @@ import type { ListingRunOutcome } from '../../src/scraping/SequentialListingOrch
 import { ScrapeReportEmailComposer } from '../../src/email/ScrapeReportEmailComposer.js';
 
 describe('ScrapeReportEmailComposer', () => {
-  it('composes a report email with recipients, summary html, and excel attachment', () => {
+  it('lists only Job Title and Company plus the excel attachment', () => {
     const outcomes: ListingRunOutcome[] = [
       {
         url: 'https://au.seek.com/big-jobs',
         jobs: [{
-          state: '',
-          suburbs: '',
-          jobTitle: 'A',
-          company: 'C',
-          salary: '',
-          postedDate: '',
+          state: 'Melbourne (VIC)',
+          suburbs: 'Dandenong',
+          jobTitle: 'Plant Mechanic',
+          company: 'William Adams Pty Ltd',
+          salary: '$90k',
+          postedDate: '8 Aug 2026',
           seekUrl: 'https://au.seek.com/job/1',
         }],
-        totalPages: 10,
-        reportedJobCount: 520,
+        totalPages: 1,
+        reportedJobCount: 1,
+      },
+      {
+        url: 'https://au.seek.com/hakka-jobs',
+        jobs: [{
+          state: '',
+          suburbs: '',
+          jobTitle: 'Chef',
+          company: 'Hakka Pty Ltd',
+          salary: '',
+          postedDate: '',
+          seekUrl: 'https://au.seek.com/job/2',
+        }],
+        totalPages: 4,
+        reportedJobCount: 90,
+        pageErrors: [{ page: 3, error: 'Job cards did not appear within 30000ms' }],
       },
       {
         url: 'https://au.seek.com/fail-jobs',
@@ -28,57 +43,32 @@ describe('ScrapeReportEmailComposer', () => {
       },
     ];
 
-    const attachment = {
-      filename: 'seek-job-listings-2026-08-12.xlsx',
-      content: Buffer.from('fake-xlsx'),
-    };
-
-    const message = new ScrapeReportEmailComposer().compose({
-      from: 'Seek Jobs <jobs@example.com>',
-      to: ['a@consult.co', 'b@consult.co'],
-      outcomes,
-      attachment,
-      generatedAt: new Date('2026-08-12T00:00:00Z'),
-    });
-
-    expect(message.from).toBe('Seek Jobs <jobs@example.com>');
-    expect(message.to).toEqual(['a@consult.co', 'b@consult.co']);
-    expect(message.subject).toContain('New jobs coming');
-    expect(message.html).toContain('1 job');
-    expect(message.html).toContain('fail-jobs');
-    expect(message.html).toContain('timeout');
-    expect(message.attachments[0].filename).toBe('seek-job-listings-2026-08-12.xlsx');
-  });
-
-  it('reports skipped page errors without treating the listing as fully failed', () => {
-    const outcomes: ListingRunOutcome[] = [
-      {
-        url: 'https://au.seek.com/hakka-jobs',
-        jobs: [{
-          state: '',
-          suburbs: '',
-          jobTitle: 'Chef',
-          company: 'Hakka',
-          salary: '',
-          postedDate: '',
-          seekUrl: 'https://au.seek.com/job/1',
-        }],
-        totalPages: 4,
-        reportedJobCount: 90,
-        pageErrors: [{ page: 3, error: 'Job cards did not appear within 30000ms' }],
-      },
-    ];
-
     const message = new ScrapeReportEmailComposer().compose({
       from: 'Seek Jobs <jobs@example.com>',
       to: ['a@consult.co'],
       outcomes,
-      attachment: { filename: 'report.xlsx', content: Buffer.from('x') },
-      generatedAt: new Date('2026-08-12T00:00:00Z'),
+      attachment: {
+        filename: 'seek-job-listings-2026-08-12.xlsx',
+        content: Buffer.from('fake-xlsx'),
+      },
     });
 
-    expect(message.html).toContain('page 3');
-    expect(message.html).toContain('Job cards did not appear');
     expect(message.subject).toContain('New jobs coming');
+    expect(message.html).toContain('Plant Mechanic');
+    expect(message.html).toContain('William Adams Pty Ltd');
+    expect(message.html).toContain('Chef');
+    expect(message.html).toContain('Hakka Pty Ltd');
+    expect(message.html).not.toContain('fail-jobs');
+    expect(message.html).not.toContain('timeout');
+    expect(message.html).not.toContain('page 3');
+    expect(message.html).not.toContain('Job cards did not appear');
+    expect(message.html).not.toContain('https://au.seek.com/big-jobs');
+    expect(message.attachments).toEqual([
+      {
+        filename: 'seek-job-listings-2026-08-12.xlsx',
+        content: Buffer.from('fake-xlsx'),
+        contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      },
+    ]);
   });
 });

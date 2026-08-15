@@ -9,40 +9,23 @@ export type ComposeInput = {
   generatedAt?: Date;
 };
 
-function plural(n: number, word: string): string {
-  return `${n} ${word}${n === 1 ? '' : 's'}`;
-}
-
-/** SRP: scrape outcomes + xlsx → email message. No HTTP. */
+/** SRP: scrape outcomes + xlsx → email with Job Title, Company, and attachment only. */
 export class ScrapeReportEmailComposer {
   compose(input: ComposeInput): EmailMessage {
-    const ok = input.outcomes.filter((o) => !o.error);
-    const failed = input.outcomes.filter((o) => o.error);
-    const jobCount = ok.reduce((sum, o) => sum + o.jobs.length, 0);
-    const dateLabel = (input.generatedAt ?? new Date()).toISOString().slice(0, 10);
-
-    const okRows = ok
+    const rows = input.outcomes
+      .filter((o) => !o.error)
+      .flatMap((o) => o.jobs)
       .map(
-        (o) =>
-          `<li>${escapeHtml(o.url)} — ${plural(o.jobs.length, 'job')}` +
-          (o.reportedJobCount != null ? ` (Seek reports ${o.reportedJobCount})` : '') +
-          `</li>`
+        (job) =>
+          `<tr><td>${escapeHtml(job.jobTitle || '')}</td><td>${escapeHtml(job.company || '')}</td></tr>`
       )
       .join('');
 
-    const failRows = failed
-      .map((o) => `<li>${escapeHtml(o.url)} — ${escapeHtml(o.error || 'error')}</li>`)
-      .join('');
-
     const html = `
-      <p>Total number of jobs: <strong>${plural(jobCount, 'job')}</strong>.</p>
-      <p>The Excel workbook is attached below.</p>
-      <ul>${okRows}</ul>
-      ${
-        failed.length
-          ? `<p><strong>${plural(failed.length, 'listing')} failed:</strong></p><ul>${failRows}</ul>`
-          : ''
-      }
+      <table>
+        <thead><tr><th>Job Title</th><th>Company</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
     `.trim();
 
     return {
