@@ -132,24 +132,30 @@ npm run scrape -- --no-email --max-pages 2
 
 Excel lands in `~/VM_Seek_Job_A_List-/output/`. Check the VM can reach Resend and Cloud Run (egress / HTTPS allowed).
 
-### 5. Auto-run `npm run scrape` when the VM starts
+### 5. Auto-run scrape on start, then stop the VM
 
-Instance schedule only **starts/stops** the machine. To scrape without SSH, paste this as the VM **startup script**:
+Paste the contents of `scripts/vm-startup.sh` into **VM → Edit → Automation → Startup script** (GCP stores a copy; re-paste after you change the file).
 
-Compute Engine → **VM instances** → `vm-seek-job-a-list` → **Edit** → **Automation** → **Startup script**.
+On boot it runs `npm run scrape` **once**, then `shutdown -h now`. The instance goes to **Terminated**. **vCPU/RAM billing stops**; the disk still has a small charge.
 
-Use the contents of `scripts/vm-startup.sh` (runs `npm run scrape` as `shiquan0327` on boot, logs to `output/startup-scrape-*.log`).
+Recommended instance schedule: **start only** at 8:00 (no need for 8:00–9:00). Optional **stop at 9:00** is only a failsafe if scrape hangs.
 
-Flow:
+```
+8:00  schedule START
+      boot → scrape (~5 min) → shutdown
+8:05  VM stopped (not idle until 9:00)
+```
 
-1. Instance schedule starts the VM (e.g. 8:00)
-2. Linux boots → startup script runs `npm run scrape`
-3. Excel + Resend email
-4. Instance schedule stops the VM (e.g. 12:30)
+To SSH and debug without auto-stop:
 
-Give the scrape enough time before the stop (hakka + William Adams is usually minutes, not hours).
+```bash
+touch ~/VM_Seek_Job_A_List-/.keep-vm-running
+```
+
+Remove that file when you want boot-and-stop again.
 
 Alternatively, on the VM: `crontab -e` with `0 8 * * 1,3 /usr/bin/npm run scrape` only works if the VM is **already running** at that time.
+
 
 ### Network: not your Wi‑Fi or hotspot
 
