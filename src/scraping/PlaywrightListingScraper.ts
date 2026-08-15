@@ -7,6 +7,7 @@ import { parseSeekJobCardHtml } from '../parsing/SeekJobCardParser.js';
 import {
   buildSeekListingPageUrl,
   CARD_LOAD_TIMEOUT_MS,
+  classifyMissingCardsWait,
   decideNextPageAction,
   MAX_CONSECUTIVE_PAGE_FAILURES,
 } from './SeekPagination.js';
@@ -117,12 +118,17 @@ export class PlaywrightListingScraper implements IListingScraper {
           timeout: this.cardLoadTimeoutMs,
         });
         await this.waitForJobCards(page);
-      } catch (err) {
+      } catch {
+        if (classifyMissingCardsWait({ pageCount, jobsCollectedSoFar: allJobs.length }) === 'end-of-listing') {
+          // Last real page already scraped; this ?page=N does not exist. Stop without email/error noise.
+          pageCount -= 1;
+          break;
+        }
         pageFailed = true;
         consecutiveFailures += 1;
         pageErrors.push({
           page: pageCount,
-          error: `Skipped page ${pageCount}: ${err instanceof Error ? err.message : String(err)}`,
+          error: `Skipped page ${pageCount}: job cards did not appear within ${this.cardLoadTimeoutMs}ms`,
         });
       }
 

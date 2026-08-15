@@ -12,18 +12,18 @@ describe('CARD_LOAD_TIMEOUT_MS', () => {
 });
 
 describe('decideNextPageAction', () => {
-  it('continues after a timed-out page so later pages can still be scraped', () => {
+  it('stops when a missing next page is classified as end of listing', () => {
     expect(
       decideNextPageAction({
-        pageCount: 2,
+        pageCount: 5,
         maxPages: 10,
         addedOnPage: 0,
         cardsPresent: false,
-        pageFailed: true,
-        consecutiveFailures: 1,
+        pageFailed: false,
+        consecutiveFailures: 0,
         maxConsecutiveFailures: MAX_CONSECUTIVE_PAGE_FAILURES,
       })
-    ).toBe('continue');
+    ).toBe('stop');
   });
 
   it('stops the listing after too many consecutive page failures, not the whole job run', () => {

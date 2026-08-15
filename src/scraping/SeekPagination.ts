@@ -32,7 +32,18 @@ export function shouldContinueToNextPage(input: {
   );
 }
 
+export type MissingCardsWaitKind = 'end-of-listing' | 'page-failure';
 export type NextPageAction = 'continue' | 'stop';
+
+/** A card wait timeout after jobs were already collected is the missing last page, not a bug. */
+export function classifyMissingCardsWait(input: {
+  pageCount: number;
+  jobsCollectedSoFar: number;
+}): MissingCardsWaitKind {
+  if (input.jobsCollectedSoFar > 0) return 'end-of-listing';
+  return 'page-failure';
+}
+
 
 /**
  * Event-driven pagination: skip a failed page, keep going unless too many
